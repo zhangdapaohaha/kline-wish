@@ -1,0 +1,5 @@
+# PyInstaller 中间产物
+build/
+# Python 缓存
+__pycache__/
+*.pyc
