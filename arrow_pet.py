@@ -485,6 +485,7 @@ class ArrowPet:
         self.bar_w = 11.0         # 实体宽度
         self.base_h = 92.0        # 波动尺度
         self.trend_up = True      # 绿涨 = 总体向上
+        self.color_invert = False  # 颜色反转：True = 红涨绿跌（照顾传统行情软件配色习惯）
 
         self.paused = False
         self.topmost = True
@@ -568,11 +569,15 @@ class ArrowPet:
 
     def _fill_menu(self, m):
         # 趋势项显示的是「点了会变成什么」：当前上涨 → 显示 下跌 ↓；点了翻成下跌 → 再显示 上涨 ↑
+        # 标签颜色跟随当前配色方案：默认绿涨红跌（下跌↓=红）；反转后红涨绿跌（下跌↓=绿）
         # ⚠️ WARN/ACCENT 是 ModernMenu 的类属性，ArrowPet 上没有，必须走类名引用
+        down_color = ModernMenu.ACCENT if self.color_invert else ModernMenu.WARN
+        up_color = ModernMenu.WARN if self.color_invert else ModernMenu.ACCENT
         m.add_item("下跌 ↓" if self.trend_up else "上涨 ↑",
                    cmd=self._flip_trend,
-                   color=ModernMenu.WARN if self.trend_up else ModernMenu.ACCENT)
+                   color=down_color if self.trend_up else up_color)
         m.add_item("尺寸", sub=self._fill_size)
+        m.add_item("颜色反转", checked=self.color_invert, cmd=self._flip_invert)
         m.add_item("始终置顶", checked=self.topmost, cmd=self._flip_top)
         m.add_item("跟随窗口", checked=self.bound_hwnd > 0, sub=self._fill_bind)
         m.add_sep()
@@ -616,6 +621,9 @@ class ArrowPet:
     def _flip_trend(self):
         self.trend_up = not self.trend_up
         self._new_cycle()
+
+    def _flip_invert(self):
+        self.color_invert = not self.color_invert
 
     def _flip_pierce(self):
         self.pierce_on = not self.pierce_on
@@ -962,14 +970,22 @@ class ArrowPet:
         self.step_t, self.stepping = 0.0, True
         self.idle_left, self.flash, self.impulse = idle, 0.18, 1.0
 
+    def _candle_colors(self, green):
+        """green=True 表示当前蜡烛是『上涨』方向。
+        默认 涨绿跌红；color_invert=True 时 涨红跌绿（照顾红涨绿跌的用户）。
+        闪光色是实体色的亮色变体，必须同族。返回 (实体/影线色, 最新价闪光色)。"""
+        if self.color_invert:
+            return (RED, RED_HI) if green else (GREEN, GREEN_HI)
+        return (GREEN, GREEN_HI) if green else (RED, RED_HI)
+
     # ---------------- 绘制 ----------------
     def _draw(self, w, pj, hi, lo):
         c = self.canvas
         bx = self.win_w / 2
 
-        # 颜色跟蜡烛图规则走：收盘 ≥ 开盘 = 绿，否则红（p 为负即跌破开盘价）
+        # 颜色跟蜡烛图规则走：收盘 ≥ 开盘 = 涨，否则跌（p 为负即跌破开盘价）
         green = (self.p >= 0) if self.trend_up else (self.p < 0)
-        color = GREEN if green else RED
+        color, hi_color = self._candle_colors(green)
 
         if self.trend_up:
             # 开盘价钉死在下方（下方留 UNDER 给插针的下影线）
@@ -998,7 +1014,7 @@ class ArrowPet:
         if self.flash > 0:
             fh = 6.0 * (self.flash / 0.18)
             c.create_rectangle(bx - w / 2, cy - fh / 2, bx + w / 2, cy + fh / 2,
-                               fill=(GREEN_HI if green else RED_HI), outline="")
+                               fill=hi_color, outline="")
 
     # ---------------- 主循环 ----------------
     def _tick(self):
